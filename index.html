@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>疊數 — 10 關測試版</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="app">
+    <header class="top">
+      <div class="brand">
+        <strong>疊數</strong>
+        <span>10 關測試版</span>
+      </div>
+      <button type="button" id="btn-levels" class="ghost">關卡</button>
+    </header>
+
+    <div class="level-meta">
+      <p class="progress" id="progress">第 1／10 關</p>
+      <h1 id="level-name">重疊就對了</h1>
+      <p class="tip" id="level-tip"></p>
+    </div>
+
+    <div class="board-wrap" id="board-wrap">
+      <div id="board" class="board" aria-label="棋盤"></div>
+    </div>
+
+    <p class="status" id="status">把積木拖到棋盤上。可以重疊。</p>
+
+    <section class="tray-section">
+      <div class="tray-head">
+        <span>積木</span>
+        <span class="tray-note">點積木，再點棋盤空格放下</span>
+      </div>
+      <div id="tray" class="tray"></div>
+    </section>
+
+    <div class="toolbar">
+      <button type="button" id="btn-rotate">旋轉</button>
+      <button type="button" id="btn-flip">翻轉</button>
+      <button type="button" id="btn-return">收回</button>
+      <button type="button" id="btn-reset" class="ghost">重來</button>
+      <button type="button" id="btn-hint" class="ghost">提示</button>
+    </div>
+    <p class="playtest-skip"><button type="button" id="btn-skip">先跳過這關（測試用）</button></p>
+  </div>
+
+  <div id="ghost" class="ghost hidden"></div>
+
+  <div id="modal-help" class="overlay">
+    <div class="modal">
+      <h2>怎麼玩</h2>
+      <ol class="rules">
+        <li>點積木，再點棋盤空格放下。用手上的積木<strong>填滿棋盤</strong>。</li>
+        <li>積木<strong>可以重疊</strong>。重疊的格子會變成新顏色。</li>
+        <li>格子上的數字 = 那個顏色<strong>連成一塊有幾格</strong>。</li>
+      </ol>
+      <p class="modal-note">例如 6 格黃疊上 9 格藍，中間 3 格變綠之後，黃色就只剩 3 格——剛好對上數字 3。</p>
+      <button type="button" id="btn-start" class="primary">開始玩</button>
+    </div>
+  </div>
+
+  <div id="modal-win" class="overlay hidden">
+    <div class="modal">
+      <h2 id="win-title">解開了</h2>
+      <p id="win-text"></p>
+      <div class="modal-actions">
+        <button type="button" id="btn-next" class="primary">下一關</button>
+        <button type="button" id="btn-win-levels" class="ghost">選關</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-levels" class="overlay hidden">
+    <div class="modal">
+      <h2>選擇關卡</h2>
+      <div id="level-grid" class="level-grid"></div>
+      <button type="button" id="btn-close-levels" class="ghost">關閉</button>
+    </div>
+  </div>
+
+  <div id="modal-hint" class="overlay hidden">
+    <div class="modal">
+      <h2>提示</h2>
+      <p id="hint-text"></p>
+      <button type="button" id="btn-close-hint" class="primary">好</button>
+    </div>
+  </div>
+
+  <script src="js/levels.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
