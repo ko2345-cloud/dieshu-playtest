@@ -19,7 +19,9 @@ export const colors = {
   orange: "#F08A2A",
   plum: "#6E4E6C",
   badge: "#E85A84",
-  tray: "#C4B6AE",
+  tray: "#D4D0CB",
+  /** Empty board cells (play screen). */
+  boardEmpty: "#4A4644",
   diamond: "#D4C4A8",
   stripe: "#E4D7C4",
   primary: "#F08A2A",

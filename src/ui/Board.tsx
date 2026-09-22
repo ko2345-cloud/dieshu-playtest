@@ -74,7 +74,7 @@ export function Board({
                   left: 8 + c * cell,
                   top: 8 + r * cell,
                   zIndex: isSel ? 1000 : filled ? 10 + r * cols + c : 0,
-                  backgroundColor: filled ? "transparent" : colors.paper,
+                  backgroundColor: filled ? "transparent" : colors.boardEmpty,
                   overflow: "hidden",
                   borderTopWidth: isSel
                     ? neighborSel(r - 1, c)
@@ -104,7 +104,7 @@ export function Board({
                     : filled
                       ? 0
                       : StyleSheet.hairlineWidth * 2,
-                  borderColor: isSel ? colors.gold : colors.softLine,
+                  borderColor: isSel ? colors.gold : "#3C3937",
                   opacity: invalid.has(`${r},${c}`) ? 0.55 : 1,
                 },
               ]}
@@ -135,7 +135,7 @@ export function Board({
 
 const styles = StyleSheet.create({
   board: {
-    backgroundColor: colors.paper,
+    backgroundColor: colors.boardEmpty,
     alignSelf: "center",
     position: "relative",
     overflow: "hidden",
@@ -168,7 +168,7 @@ function ClueMark({
   const fontSize = Math.max(11, Math.round(cell * (digits > 1 ? 0.3 : 0.38)));
   if (!filled) {
     return (
-      <Text style={[styles.clue, { fontSize, color: colors.ink }]}>{n}</Text>
+      <Text style={[styles.clue, { fontSize, color: colors.onInk }]}>{n}</Text>
     );
   }
   const d = Math.round(

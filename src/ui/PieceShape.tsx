@@ -26,46 +26,40 @@ export function PieceShape({ cells, colorId, cell, spent }: Props) {
       style={{
         width: w * cell,
         height: h * cell,
-        overflow: "hidden",
+        position: "relative",
         pointerEvents: "none",
       }}
     >
-      {Array.from({ length: h }, (_, r) =>
-        Array.from({ length: w }, (_, c) => {
-          if (!set.has(`${r},${c}`)) return null;
-          if (spent) {
+      {Array.from({ length: h }, (_, r) => (
+        <View key={r} style={{ flexDirection: "row", height: cell }}>
+          {Array.from({ length: w }, (_, c) => {
+            if (!set.has(`${r},${c}`)) {
+              return <View key={c} style={{ width: cell, height: cell }} />;
+            }
+            if (spent) {
+              return (
+                <View
+                  key={c}
+                  style={{
+                    width: cell,
+                    height: cell,
+                    backgroundColor: colors.spent,
+                    borderRadius: Math.max(2, Math.round(cell * 0.18)),
+                  }}
+                />
+              );
+            }
             return (
-              <View
-                key={`${r}-${c}`}
-                style={{
-                  position: "absolute",
-                  width: cell,
-                  height: cell,
-                  left: c * cell,
-                  top: r * cell,
-                  backgroundColor: colors.spent,
-                  borderRadius: Math.max(2, Math.round(cell * 0.18)),
-                }}
+              <Image
+                key={c}
+                source={source}
+                resizeMode="cover"
+                style={{ width: cell, height: cell }}
               />
             );
-          }
-          return (
-            <Image
-              key={`${r}-${c}`}
-              source={source}
-              resizeMode="cover"
-              style={{
-                position: "absolute",
-                width: cell,
-                height: cell,
-                left: c * cell,
-                top: r * cell,
-                backfaceVisibility: "hidden",
-              }}
-            />
-          );
-        }),
-      )}
+          })}
+        </View>
+      ))}
     </View>
   );
 }
