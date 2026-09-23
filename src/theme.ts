@@ -34,6 +34,10 @@ export const colors = {
   bad: "#B00020",
   /** Tray silhouette after that piece is on the board. */
   spent: "#5C564F",
+  /** Category cards on the home hub. */
+  cardRect: "#2EBFDF",
+  cardTetro: "#F5A024",
+  cardWell: "#3A4160",
   overlay: "rgba(47,44,42,0.45)",
 } as const;
 

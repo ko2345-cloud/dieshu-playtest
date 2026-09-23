@@ -4,7 +4,7 @@ import { loadDaily, loadLevel, loadTutorial } from "@/data/levelRepository";
 import { useProgress } from "@/data/progressStore";
 import { bbox, fits, pieceAbs } from "@/game/geometry";
 import { coverage, evaluate } from "@/game/rules";
-import type { LevelData, PieceRuntime } from "@/game/types";
+import type { LevelCategory, LevelData, PieceRuntime } from "@/game/types";
 import { colors, fontFamily } from "@/theme";
 import { BannerAdBar } from "@/ui/BannerAdBar";
 import { Board } from "@/ui/Board";
@@ -46,10 +46,15 @@ const TOOL_SIZE = 52;
 const HINT_W = 132;
 const HINT_H = 52;
 
-function loadFromParams(mode: string, size: number, id: number): LevelData | null {
+function loadFromParams(
+  mode: string,
+  size: number,
+  id: number,
+  category: LevelCategory,
+): LevelData | null {
   if (mode === "tutorial") return loadTutorial()[id - 1] ?? null;
   if (mode === "daily") return loadDaily();
-  return loadLevel(size, id, mode === "extra");
+  return loadLevel(size, id, mode === "extra", category);
 }
 
 function makePieces(level: LevelData): PieceRuntime[] {
@@ -61,11 +66,17 @@ function makePieces(level: LevelData): PieceRuntime[] {
   }));
 }
 
-function levelTitle(mode: string, size: number, levelId: number): string {
+function levelTitle(
+  mode: string,
+  size: number,
+  levelId: number,
+  category: LevelCategory,
+): string {
   if (mode === "daily") return "Daily";
   if (mode === "tutorial") return `Tutorial ${levelId}`;
   if (mode === "extra") return `${size}×${size} Extra ${levelId}`;
-  return `${size}×${size} Levels ${levelId}`;
+  const kind = category === "tetro" ? "七型" : "方型";
+  return `${size}×${size} ${kind} ${levelId}`;
 }
 
 export default function PlayScreen() {
@@ -80,15 +91,17 @@ export default function PlayScreen() {
     mode?: string;
     size?: string;
     id?: string;
+    cat?: string;
   }>();
   const mode = params.mode ?? "tutorial";
   const size = Number(params.size ?? 4);
   const levelId = Number(params.id ?? 1);
+  const category: LevelCategory = params.cat === "tetro" ? "tetro" : "rect";
 
   const level = useMemo(() => {
     if (mode === "daily") return loadDaily(new Date(), progress.dailySalt);
-    return loadFromParams(mode, size, levelId);
-  }, [levelId, mode, progress.dailySalt, size]);
+    return loadFromParams(mode, size, levelId, category);
+  }, [category, levelId, mode, progress.dailySalt, size]);
 
   const [pieces, setPieces] = useState<PieceRuntime[]>([]);
   const [selected, setSelected] = useState(0);
@@ -324,11 +337,11 @@ export default function PlayScreen() {
     if (mode === "tutorial") {
       if (levelId >= loadTutorial().length) await progress.setTutorialDone();
     } else if (mode === "pack" || mode === "extra") {
-      await progress.markComplete(size, levelId, mode === "extra");
+      await progress.markComplete(size, levelId, mode === "extra", category);
     }
     const fire = await progress.bumpInterstitial();
     if (fire) await ads.showInterstitial();
-  }, [level, levelId, mode, progress, size, won]);
+  }, [category, level, levelId, mode, progress, size, won]);
 
   useEffect(() => {
     if (ev?.win && !won && dragId == null) finishWin();
@@ -459,7 +472,7 @@ export default function PlayScreen() {
       }
       router.replace({
         pathname: "/play",
-        params: { mode: "pack", size: "4", id: "1" },
+        params: { mode: "pack", size: "4", id: "1", cat: "rect" },
       });
       return;
     }
@@ -474,7 +487,7 @@ export default function PlayScreen() {
     }
     router.replace({
       pathname: "/play",
-      params: { mode, size: String(size), id: String(next) },
+      params: { mode, size: String(size), id: String(next), cat: category },
     });
   };
 
@@ -486,7 +499,7 @@ export default function PlayScreen() {
     );
   }
 
-  const title = levelTitle(mode, size, levelId);
+  const title = levelTitle(mode, size, levelId, category);
 
   return (
     <View
@@ -710,7 +723,11 @@ export default function PlayScreen() {
           setWon(false);
           router.push({
             pathname: "/levels",
-            params: { size: String(size), extra: mode === "extra" ? "1" : "0" },
+            params: {
+              size: String(size),
+              extra: mode === "extra" ? "1" : "0",
+              cat: category,
+            },
           });
         }}
       />

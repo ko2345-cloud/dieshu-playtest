@@ -1,4 +1,4 @@
-import type { LevelData } from "@/game/types";
+import type { LevelCategory, LevelData } from "@/game/types";
 
 import { DAILY_FALLBACK, LEVELS_PER_SIZE, SIZES } from "./constants";
 
@@ -8,8 +8,6 @@ const packLoaders: Record<number, () => LevelData[]> = {
   6: () => require("../../assets/levels/6.json"),
   7: () => require("../../assets/levels/7.json"),
   8: () => require("../../assets/levels/8.json"),
-  9: () => require("../../assets/levels/9.json"),
-  10: () => require("../../assets/levels/10.json"),
 };
 
 const extraLoaders: Record<number, () => LevelData[]> = {
@@ -18,8 +16,6 @@ const extraLoaders: Record<number, () => LevelData[]> = {
   6: () => require("../../assets/levels/extra/6.json"),
   7: () => require("../../assets/levels/extra/7.json"),
   8: () => require("../../assets/levels/extra/8.json"),
-  9: () => require("../../assets/levels/extra/9.json"),
-  10: () => require("../../assets/levels/extra/10.json"),
 };
 
 const dailyLoaders: Record<number, () => LevelData[]> = {
@@ -28,8 +24,14 @@ const dailyLoaders: Record<number, () => LevelData[]> = {
   6: () => require("../../assets/levels/daily_fallback/6.json"),
   7: () => require("../../assets/levels/daily_fallback/7.json"),
   8: () => require("../../assets/levels/daily_fallback/8.json"),
-  9: () => require("../../assets/levels/daily_fallback/9.json"),
-  10: () => require("../../assets/levels/daily_fallback/10.json"),
+};
+
+const tetroLoaders: Record<number, () => LevelData[]> = {
+  4: () => require("../../assets/levels/tetro/4.json"),
+  5: () => require("../../assets/levels/tetro/5.json"),
+  6: () => require("../../assets/levels/tetro/6.json"),
+  7: () => require("../../assets/levels/tetro/7.json"),
+  8: () => require("../../assets/levels/tetro/8.json"),
 };
 
 function safeLoad(loader: () => LevelData[]): LevelData[] {
@@ -49,8 +51,13 @@ export function loadTutorial(): LevelData[] {
   }
 }
 
-export function loadPack(size: number, extra = false): LevelData[] {
-  const loaders = extra ? extraLoaders : packLoaders;
+export function loadPack(
+  size: number,
+  extra = false,
+  category: LevelCategory = "rect",
+): LevelData[] {
+  const loaders =
+    category === "tetro" ? tetroLoaders : extra ? extraLoaders : packLoaders;
   return safeLoad(loaders[size] ?? (() => []));
 }
 
@@ -58,8 +65,9 @@ export function loadLevel(
   size: number,
   id: number,
   extra = false,
+  category: LevelCategory = "rect",
 ): LevelData | null {
-  const pack = loadPack(size, extra);
+  const pack = loadPack(size, extra, category);
   return pack.find((l) => l.id === id) ?? pack[id - 1] ?? null;
 }
 

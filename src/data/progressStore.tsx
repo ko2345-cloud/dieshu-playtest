@@ -9,6 +9,8 @@ import {
   type ReactNode,
 } from "react";
 
+import type { LevelCategory } from "@/game/types";
+
 import { IAP, SIZES, STARTER_HINTS } from "./constants";
 
 const KEY = "dieshu-progress-v1";
@@ -36,9 +38,24 @@ const empty: Snapshot = {
 
 type Store = Snapshot & {
   ready: boolean;
-  packKey: (size: number, id: number, extra?: boolean) => string;
-  isComplete: (size: number, id: number, extra?: boolean) => boolean;
-  markComplete: (size: number, id: number, extra?: boolean) => Promise<void>;
+  packKey: (
+    size: number,
+    id: number,
+    extra?: boolean,
+    category?: LevelCategory,
+  ) => string;
+  isComplete: (
+    size: number,
+    id: number,
+    extra?: boolean,
+    category?: LevelCategory,
+  ) => boolean;
+  markComplete: (
+    size: number,
+    id: number,
+    extra?: boolean,
+    category?: LevelCategory,
+  ) => Promise<void>;
   consumeHint: () => Promise<boolean>;
   addHints: (n: number) => Promise<void>;
   bumpInterstitial: () => Promise<boolean>;
@@ -52,7 +69,13 @@ type Store = Snapshot & {
 
 const Ctx = createContext<Store | null>(null);
 
-export function packKey(size: number, id: number, extra = false) {
+export function packKey(
+  size: number,
+  id: number,
+  extra = false,
+  category: LevelCategory = "rect",
+) {
+  if (category === "tetro") return `t:${size}:${id}`;
   return `${extra ? "e" : "p"}:${size}:${id}`;
 }
 
@@ -82,11 +105,15 @@ export function ProgressProvider({ children }: { children: ReactNode }) {
       ...snap,
       ready,
       packKey,
-      isComplete: (size, id, extra) => !!snap.completed[packKey(size, id, extra)],
-      markComplete: async (size, id, extra) => {
+      isComplete: (size, id, extra, category) =>
+        !!snap.completed[packKey(size, id, extra, category)],
+      markComplete: async (size, id, extra, category) => {
         const next = {
           ...snap,
-          completed: { ...snap.completed, [packKey(size, id, extra)]: true },
+          completed: {
+            ...snap.completed,
+            [packKey(size, id, extra, category)]: true,
+          },
         };
         await persist(next);
       },

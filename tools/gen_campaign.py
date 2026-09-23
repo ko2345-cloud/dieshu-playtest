@@ -1,34 +1,46 @@
-"""Overlap-number level generator. Fixed orientation (no rotate). Sparse clues."""
+"""Overlap-number level generator. Fixed orientation (no rotate). Sparse clues.
+
+Two packs: rectangles (方型積木) and the seven tetrominoes (七型方塊).
+A tetromino may be stored already rotated; the player still cannot turn it.
+"""
 from __future__ import annotations
 
 import json
 import random
+import sys
+import time
 from collections import defaultdict, deque
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "assets" / "levels"
 
-SIZES = [4, 5, 6, 7, 8, 9, 10]
+SIZES = [4, 5, 6, 7, 8]
 # Rectangles only (squares included). Each piece has at most MAX_PIECE_CELLS.
 MAX_PIECE_CELLS = 20
+MAX_CLUES = 6
 PIECE_RANGE = {
     4: (2, 5),
     5: (3, 6),
-    6: (3, 7),
+    6: (4, 7),
     7: (4, 8),
     8: (5, 9),
-    9: (5, 9),
-    10: (6, 10),
+}
+# Every tetromino is 4 cells, so the low end is the smallest count that can
+# cover the board and still overlap. High end stays close so the tray stays playable.
+TETRO_RANGE = {
+    4: (5, 6),
+    5: (7, 8),
+    6: (10, 11),
+    7: (13, 14),
+    8: (18, 19),
 }
 CLUE_RANGE = {
     4: (2, 5),
     5: (2, 6),
-    6: (3, 7),
-    7: (3, 8),
-    8: (4, 9),
-    9: (4, 9),
-    10: (5, 10),
+    6: (3, 6),
+    7: (3, 6),
+    8: (4, 6),
 }
 FREE_PER_SIZE = 5
 EXTRA_PER_SIZE = 5
@@ -325,38 +337,50 @@ def expand_rects(rects, size, rng, unique=False):
 
 def nudge_decoy(size, dims, pos, rng):
     """Move one or two rectangles. Same shapes, different overlap."""
+    found = sample_rect_decoys(size, dims, pos, rng, want=1)
+    return found[0] if found else None
+
+
+def sample_rect_decoys(size, dims, pos, rng, want=10):
+    """Several full covers that are not the solution. Clues must reject all of them."""
     origin = [tuple(p) for p in pos]
+    seen = {tuple(origin)}
+    found = []
     n = len(dims)
 
     def placed_at(new_pos):
         return [rect_cells(h, w, r, c) for (h, w), (r, c) in zip(dims, new_pos)]
 
-    for k in (1, 2):
-        if k > n:
-            continue
-        tries = 30 if k == 1 else 50
+    for k, tries in ((1, 36), (2, 48)):
+        if k > n or len(found) >= want:
+            break
         for _ in range(tries):
             new_pos = list(origin)
             for i in rng.sample(range(n), k):
                 h, w = dims[i]
                 new_pos[i] = (rng.randint(0, size - h), rng.randint(0, size - w))
-            if list(map(tuple, new_pos)) == origin:
+            key = tuple(new_pos)
+            if key in seen:
                 continue
+            seen.add(key)
             placed = placed_at(new_pos)
             if quality_ok(placed, size):
-                return placed
-    return None
+                found.append(placed)
+                if len(found) >= want:
+                    break
+    return found
 
 
 def _level_from_pair(size, n_clues, rng, dims, placed_a, pos_a):
-    placed_b = nudge_decoy(size, dims, pos_a, rng)
-    if not placed_b or signature(placed_a) == signature(placed_b):
-        return None
     cover = cover_map(placed_a)
-    full = clues_from_regions(regions_from_cover(cover, size, size))
-    if full is None or satisfies(placed_b, size, size, full):
+    regs = regions_from_cover(cover, size, size)
+    full = clues_from_regions(regs)
+    if full is None or not enough_local_regions(regs, size):
         return None
-    clues = thin_clues(full, size, n_clues, placed_a, placed_b, rng)
+    decoys = decoys_split_locally(full, sample_rect_decoys(size, dims, pos_a, rng, want=8), size)
+    if not decoys:
+        return None
+    clues = reasoning_clues(full, size, n_clues, decoys, rng)
     if clues is None:
         return None
     pieces, solution = placed_to_pieces_and_solution(placed_a)
@@ -420,47 +444,171 @@ def signature(placed):
     return tuple(tuple(p) for p in placed)
 
 
-def thin_clues(full_clues, size, n_target, placed_a, placed_b, rng):
-    """Keep as few numbers as possible while still rejecting the decoy."""
+def decoys_split_locally(full, decoys, size):
+    """Wrong layouts a 2–4 can catch, versus ones that only change a big blob."""
+    local = []
+    for placed in decoys:
+        smap = _placement_sizes(placed, size)
+        if any(cl["n"] <= 4 and smap.get((cl["r"], cl["c"]), 0) != cl["n"] for cl in full):
+            local.append(placed)
+    return local
+
+
+def enough_local_regions(regs, size):
+    """Large boards need several small regions, or there is nowhere to start deducing."""
+    if size < 6:
+        return True
+    small = sum(1 for reg in regs if reg["sig"] and len(reg["cells"]) <= 4)
+    return small >= 4
+
+
+def _placement_sizes(placed, size):
+    return region_sizes(cover_map(placed), size, size)
+
+
+def _kills_all(chosen, decoy_maps):
+    for smap in decoy_maps:
+        if all(smap.get((c["r"], c["c"]), 0) == c["n"] for c in chosen):
+            return False
+    return True
+
+
+def _local_bonus(n):
+    # 2–4 is a step you can finish and then use. A lone 1 only says "not the neighbor."
+    if 2 <= n <= 4:
+        return 8
+    if n == 1:
+        return 2
+    if n <= 6:
+        return 1
+    return -6
+
+
+def _spread(cl, chosen):
+    if not chosen:
+        return 0
+    return min(abs(cl["r"] - c["r"]) + abs(cl["c"] - c["c"]) for c in chosen)
+
+
+def reasoning_clues(full_clues, size, n_target, decoys, rng):
+    """Pick at most 6 numbers that are small, spread out, and reject every decoy.
+
+    A big region only tells you the blob is large after almost everything is down.
+    A 2 or a 3 goes green or red as soon as that spot is wrong, so the player can
+    take the next step. This still does not prove the solution is unique.
+    """
     lo, hi = CLUE_RANGE[size]
+    if size >= 6:
+        n_target = hi
     target = max(lo, min(hi, n_target, len(full_clues)))
-    # Prefer larger regions (more informative).
-    ranked = sorted(full_clues, key=lambda cl: (-cl["n"], cl["r"], cl["c"]))
-    # Grow until decoy fails, then trim extras down toward target if still unique.
+    decoy_maps = [_placement_sizes(d, size) for d in decoys]
     chosen = []
-    for cl in ranked:
-        chosen.append(cl)
-        if not satisfies(placed_b, size, size, chosen) and len(chosen) >= lo:
+    remaining = list(range(len(decoy_maps)))
+
+    def taken(cl):
+        return any(cl["r"] == c["r"] and cl["c"] == c["c"] for c in chosen)
+
+    while remaining and len(chosen) < hi:
+        best = None
+        best_key = None
+        live = [decoy_maps[i] for i in remaining]
+        for cl in full_clues:
+            if taken(cl):
+                continue
+            killed = sum(1 for smap in live if smap.get((cl["r"], cl["c"]), 0) != cl["n"])
+            if killed == 0:
+                continue
+            key = (killed, _local_bonus(cl["n"]) - sum(1 for c in chosen if c["n"] == cl["n"]), _spread(cl, chosen), -cl["n"])
+            if best_key is None or key > best_key:
+                best_key = key
+                best = cl
+        if best is None:
             break
-    if satisfies(placed_b, size, size, chosen):
+        chosen.append(best)
+        remaining = [
+            i
+            for i in remaining
+            if decoy_maps[i].get((best["r"], best["c"]), 0) == best["n"]
+        ]
+    if remaining or not _kills_all(chosen, decoy_maps):
         return None
     while len(chosen) > target:
-        # Drop the least informative remaining clue if uniqueness holds.
-        drop_idx = None
-        for i in range(len(chosen) - 1, -1, -1):
-            trial = chosen[:i] + chosen[i + 1 :]
-            if len(trial) < lo:
-                break
-            if not satisfies(placed_b, size, size, trial):
-                drop_idx = i
-                break
-        if drop_idx is None:
+        biggest = max(range(len(chosen)), key=lambda i: (chosen[i]["n"], -_spread(chosen[i], chosen)))
+        trial = chosen[:biggest] + chosen[biggest + 1 :]
+        if len(trial) < lo or not _kills_all(trial, decoy_maps):
             break
-        chosen.pop(drop_idx)
-    # Optional: if still under target and we have more clues, add a couple for fairness.
-    if len(chosen) < target:
-        have = {(c["r"], c["c"]) for c in chosen}
-        for cl in ranked:
-            if (cl["r"], cl["c"]) in have:
+        chosen = trial
+    while len(chosen) < target:
+        best = None
+        best_key = None
+        for cl in full_clues:
+            if taken(cl):
                 continue
-            chosen.append(cl)
-            have.add((cl["r"], cl["c"]))
-            if len(chosen) >= target:
-                break
-    if satisfies(placed_b, size, size, chosen):
+            key = (_local_bonus(cl["n"]), _spread(cl, chosen), -cl["n"], rng.random())
+            if best_key is None or key > best_key:
+                best_key = key
+                best = cl
+        if best is None:
+            break
+        chosen.append(best)
+    if len(chosen) < lo or len(chosen) > hi or len(chosen) > MAX_CLUES:
         return None
-    rng.shuffle(chosen)
+    if not _kills_all(chosen, decoy_maps):
+        return None
+    if size >= 6 and not _large_board_readable(chosen, full_clues, decoy_maps, size):
+        return None
     return sorted(chosen, key=lambda c: (c["r"], c["c"]))
+
+
+def _replace_clue(chosen, drop_i, options, decoy_maps):
+    for cl in options:
+        trial = [c for i, c in enumerate(chosen) if i != drop_i] + [cl]
+        if _kills_all(trial, decoy_maps):
+            chosen[:] = trial
+            return True
+    return False
+
+
+def _large_board_readable(chosen, full_clues, decoy_maps, size):
+    """Several 2–4 clues, spread across the board. A 1 only says the cell is alone."""
+
+    def fresh(pred):
+        opts = [
+            c
+            for c in full_clues
+            if pred(c) and not any(c["r"] == x["r"] and c["c"] == x["c"] for x in chosen)
+        ]
+        opts.sort(key=lambda c: (_spread(c, chosen), _local_bonus(c["n"])), reverse=True)
+        return opts
+
+    for _ in range(8):
+        local = [c for c in chosen if 2 <= c["n"] <= 4]
+        if len(local) >= 3:
+            break
+        big_i = max(range(len(chosen)), key=lambda i: (0 if 2 <= chosen[i]["n"] <= 4 else 1, chosen[i]["n"]))
+        if 2 <= chosen[big_i]["n"] <= 4:
+            return False
+        if not _replace_clue(chosen, big_i, fresh(lambda c: 2 <= c["n"] <= 4), decoy_maps):
+            return False
+    # A region bigger than 6 only checks out when a large blob is finished.
+    for _ in range(6):
+        huge = [i for i, c in enumerate(chosen) if c["n"] > 6]
+        if not huge:
+            break
+        drop_i = max(huge, key=lambda i: chosen[i]["n"])
+        if not _replace_clue(chosen, drop_i, fresh(lambda c: 2 <= c["n"] <= 4), decoy_maps):
+            return False
+    while sum(1 for c in chosen if c["n"] == 1) > 2:
+        drop_i = next(i for i, c in enumerate(chosen) if c["n"] == 1)
+        if not _replace_clue(chosen, drop_i, fresh(lambda c: 2 <= c["n"] <= 4), decoy_maps):
+            return False
+    if len([c for c in chosen if 2 <= c["n"] <= 4]) < 3:
+        return False
+    rows = [c["r"] for c in chosen]
+    cols = [c["c"] for c in chosen]
+    if max(rows) - min(rows) < size // 2 and max(cols) - min(cols) < size // 2:
+        return False
+    return True
 
 
 def piece_count_for(size, level_id, extra=False, pack_len=FREE_PER_SIZE):
@@ -565,6 +713,274 @@ def generate_pack(size, count, seed0, extra=False):
     return levels
 
 
+# One fixed drawing of each tetromino. Rotations are added below; mirrors stay
+# separate (J/L and S/Z are both in the set).
+_TETRO_BASES = (
+    ("I", ((0, 0), (1, 0), (2, 0), (3, 0))),
+    ("O", ((0, 0), (0, 1), (1, 0), (1, 1))),
+    ("T", ((0, 0), (0, 1), (0, 2), (1, 1))),
+    ("J", ((0, 1), (1, 1), (2, 0), (2, 1))),
+    ("L", ((0, 0), (1, 0), (2, 0), (2, 1))),
+    ("S", ((0, 1), (0, 2), (1, 0), (1, 1))),
+    ("Z", ((0, 0), (0, 1), (1, 1), (1, 2))),
+)
+
+
+def tetro_orientations():
+    seen = set()
+    out = []
+    for name, cells in _TETRO_BASES:
+        cur = list(cells)
+        for _ in range(4):
+            norm = normalize(cur)
+            if (name, norm) not in seen:
+                seen.add((name, norm))
+                out.append((name, norm))
+            cur = [(c, -r) for r, c in cur]
+    return out
+
+
+TETRO_SHAPES = tetro_orientations()
+TETRO_SHAPE_SET = {cells for _name, cells in TETRO_SHAPES}
+_PLACE_CACHE = {}
+_CELL_INDEX = {}
+
+
+def is_tetro(cells):
+    return normalize(cells) in TETRO_SHAPE_SET
+
+
+def tetro_placements(size):
+    places = []
+    for name, shape in TETRO_SHAPES:
+        h = max(r for r, _ in shape) + 1
+        w = max(c for _, c in shape) + 1
+        for r0 in range(size - h + 1):
+            for c0 in range(size - w + 1):
+                cells = tuple((r0 + r, c0 + c) for r, c in shape)
+                mask = 0
+                for r, c in cells:
+                    mask |= 1 << (r * size + c)
+                places.append((name, cells, mask))
+    return places
+
+
+def placements_for(size):
+    if size not in _PLACE_CACHE:
+        places = tetro_placements(size)
+        buckets = [[] for _ in range(size * size)]
+        for i, (_name, _cells, mask) in enumerate(places):
+            bit = mask
+            while bit:
+                b = (bit & -bit).bit_length() - 1
+                buckets[b].append(i)
+                bit &= bit - 1
+        _PLACE_CACHE[size] = places
+        _CELL_INDEX[size] = buckets
+    return _PLACE_CACHE[size], _CELL_INDEX[size]
+
+
+def _empty_bits(covered, bits):
+    out = []
+    rest = ((1 << bits) - 1) ^ covered
+    while rest:
+        b = (rest & -rest).bit_length() - 1
+        out.append(b)
+        rest &= rest - 1
+    return out
+
+
+def place_tetros(size, n, rng, trials=800):
+    """Cover the board with n tetrominoes. Each keeps one private cell."""
+    places, buckets = placements_for(size)
+    span = len(places)
+    full = (1 << (size * size)) - 1
+    area = size * size
+    for _trial in range(trials):
+        covered = 0
+        reserved = 0
+        chosen = []
+        used = defaultdict(int)
+        failed = False
+        for i in range(n):
+            later = n - i - 1
+            empty = area - covered.bit_count()
+            holes = _empty_bits(covered, area) if empty <= 12 else None
+            if holes is not None and not holes and later:
+                failed = True
+                break
+            if holes:
+                pool_i = []
+                seen_i = set()
+                rng.shuffle(holes)
+                for b in holes[:6]:
+                    for idx in buckets[b]:
+                        if idx not in seen_i:
+                            seen_i.add(idx)
+                            pool_i.append(idx)
+                rng.shuffle(pool_i)
+                pool_i = pool_i[:220]
+            else:
+                pool_i = [rng.randrange(span) for _ in range(160)]
+            best = None
+            best_key = None
+            for idx in pool_i:
+                name, cells, mask = places[idx]
+                if mask & reserved:
+                    continue
+                fresh = mask & (full ^ covered)
+                if not fresh:
+                    continue
+                gain = fresh.bit_count()
+                empty_after = empty - gain
+                if empty_after > 4 * later or empty_after < later:
+                    continue
+                key = gain * 5 - used[name] * 4 + rng.random()
+                if best_key is None or key > best_key:
+                    best_key = key
+                    best = (name, cells, mask, fresh)
+            if best is None:
+                failed = True
+                break
+            name, cells, mask, fresh = best
+            reserved |= fresh & -fresh
+            covered |= mask
+            chosen.append(cells)
+            used[name] += 1
+        if failed or covered != full:
+            continue
+        placed = [set(cells) for cells in chosen]
+        if quality_ok(placed, size) and all(is_tetro(p) for p in placed):
+            return placed
+    return None
+
+
+def sample_tetro_decoys(size, placed, rng, want=8):
+    placed = [tuple(sorted(p)) for p in placed]
+    shapes = [normalize(p) for p in placed]
+    boxes = []
+    for shape in shapes:
+        boxes.append((max(r for r, _ in shape) + 1, max(c for _, c in shape) + 1))
+
+    def moved(i, r, c):
+        return tuple(sorted((r + dr, c + dc) for dr, dc in shapes[i]))
+
+    origin = tuple(placed)
+    seen = {origin}
+    found = []
+    n = len(placed)
+    for k, tries in ((1, 40), (2, 50)):
+        if k > n or len(found) >= want:
+            break
+        for _ in range(tries):
+            new = list(placed)
+            changed = False
+            for i in rng.sample(range(n), k):
+                h, w = boxes[i]
+                cells = moved(i, rng.randint(0, size - h), rng.randint(0, size - w))
+                if cells != placed[i]:
+                    changed = True
+                new[i] = cells
+            key = tuple(new)
+            if not changed or key in seen:
+                continue
+            seen.add(key)
+            if quality_ok(new, size):
+                found.append([set(p) for p in new])
+                if len(found) >= want:
+                    break
+    return found
+
+
+def nudge_tetro(size, placed, rng):
+    """Slide one or two pieces. Shape and rotation stay; only the origin moves."""
+    found = sample_tetro_decoys(size, placed, rng, want=1)
+    return found[0] if found else None
+
+
+def generate_tetro_one(size, n_pieces, n_clues, rng):
+    for _ in range(50):
+        placed = place_tetros(size, n_pieces, rng)
+        if not placed:
+            continue
+        cover = cover_map(placed)
+        regs = regions_from_cover(cover, size, size)
+        full = clues_from_regions(regs)
+        if full is None or not enough_local_regions(regs, size):
+            continue
+        decoys = decoys_split_locally(full, sample_tetro_decoys(size, placed, rng, want=8), size)
+        if not decoys:
+            continue
+        clues = reasoning_clues(full, size, n_clues, decoys, rng)
+        if not clues or len(clues) > MAX_CLUES:
+            continue
+        pieces, solution = placed_to_pieces_and_solution(placed)
+        if any(not is_tetro(p) for p in pieces):
+            continue
+        return {
+            "rows": size,
+            "cols": size,
+            "clues": clues,
+            "pieces": pieces,
+            "solution": solution,
+        }
+    return None
+
+
+def tetro_count_for(size, level_id, pack_len=FREE_PER_SIZE):
+    lo, hi = TETRO_RANGE[size]
+    t = (level_id - 1) / max(1, pack_len - 1)
+    n = lo + int(round(t * (hi - lo)))
+    return max(lo, min(hi, n))
+
+
+def generate_tetro_pack(size, count, seed0):
+    levels = []
+    seen = set()
+    attempts = 0
+    limit = count * 80
+    while len(levels) < count and attempts < limit:
+        attempts += 1
+        rng = random.Random(seed0 + attempts * 9973 + size * 131)
+        n = tetro_count_for(size, len(levels) + 1, pack_len=count)
+        n_clues = clue_count_for(size, len(levels) + 1, pack_len=count)
+        lvl = generate_tetro_one(size, n, n_clues, rng)
+        if not lvl:
+            continue
+        key = (
+            tuple(tuple(map(tuple, p)) for p in lvl["pieces"]),
+            tuple((c["r"], c["c"], c["n"]) for c in lvl["clues"]),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        lvl["id"] = len(levels) + 1
+        levels.append(lvl)
+        print(
+            f"  tetro {size}x{size}: {len(levels)}/{count} (pieces={n}, clues={len(lvl['clues'])})",
+            flush=True,
+        )
+    if len(levels) < count:
+        raise RuntimeError(f"Only got {len(levels)}/{count} tetro levels for {size}")
+    return levels
+
+
+def test_tetro():
+    for size in SIZES:
+        t0 = time.perf_counter()
+        rng = random.Random(size * 4000091)
+        n = TETRO_RANGE[size][0]
+        lvl = generate_tetro_one(size, n, CLUE_RANGE[size][0], rng)
+        dt = time.perf_counter() - t0
+        if not lvl:
+            print(f"FAIL {size} in {dt:.1f}s", flush=True)
+            continue
+        print(
+            f"ok {size} pieces={len(lvl['pieces'])} clues={len(lvl['clues'])} {dt:.1f}s",
+            flush=True,
+        )
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     tut = build_tutorial()
@@ -581,9 +997,15 @@ def main():
         print(f"=== {size}x{size} daily fallback ===")
         fb = generate_pack(size, FALLBACK_PER_SIZE, seed0=size * 3_000_047)
         write_pack(OUT / "daily_fallback" / f"{size}.json", fb)
+        print(f"=== {size}x{size} tetro ===")
+        tetro = generate_tetro_pack(size, FREE_PER_SIZE, seed0=size * 4_000_091)
+        write_pack(OUT / "tetro" / f"{size}.json", tetro)
 
     print("done")
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == "tetro-test":
+        test_tetro()
+    else:
+        main()

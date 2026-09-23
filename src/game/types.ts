@@ -30,8 +30,11 @@ export type EvalResult = {
   win: boolean;
 };
 
+export type LevelCategory = "rect" | "tetro";
+
 export type PlayParams = {
   mode: "tutorial" | "pack" | "extra" | "daily";
   size?: number;
   levelId?: number;
+  category?: LevelCategory;
 };

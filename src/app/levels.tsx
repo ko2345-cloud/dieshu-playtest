@@ -1,5 +1,6 @@
 import { LEVELS_PER_SIZE } from "@/data/constants";
 import { useProgress } from "@/data/progressStore";
+import type { LevelCategory } from "@/game/types";
 import { colors, fontFamily, softShadow } from "@/theme";
 import { GridPaper } from "@/ui/GridPaper";
 import { InkCircle, ScreenHeader } from "@/ui/ScreenHeader";
@@ -10,12 +11,14 @@ import { StyleSheet, Text, View } from "react-native";
 
 export default function LevelsScreen() {
   const progress = useProgress();
-  const { size: sizeStr, extra: extraStr } = useLocalSearchParams<{
+  const { size: sizeStr, extra: extraStr, cat: catStr } = useLocalSearchParams<{
     size?: string;
     extra?: string;
+    cat?: string;
   }>();
   const size = Number(sizeStr ?? 4);
-  const extra = extraStr === "1";
+  const cat: LevelCategory = catStr === "tetro" ? "tetro" : "rect";
+  const extra = extraStr === "1" && cat === "rect";
   const locked = extra && !progress.extraOwned(size);
   const data = Array.from({ length: LEVELS_PER_SIZE }, (_, i) => i + 1);
   const [gridW, setGridW] = useState(0);
@@ -29,7 +32,10 @@ export default function LevelsScreen() {
       <GridPaper />
       <ScreenHeader
         title={`${size}×${size}`}
-        badge={{ kicker: extra ? "EXTRA" : "關卡", value: `${size}×${size}` }}
+        badge={{
+          kicker: extra ? "EXTRA" : cat === "tetro" ? "七型" : "方型",
+          value: `${size}×${size}`,
+        }}
         onBack={() => router.back()}
         right={
           <>
@@ -53,7 +59,7 @@ export default function LevelsScreen() {
           onLayout={(e) => setGridW(e.nativeEvent.layout.width)}
         >
           {data.map((item) => {
-            const done = progress.isComplete(size, item, extra);
+            const done = progress.isComplete(size, item, extra, cat);
             return (
               <PressableScale
                 key={item}
@@ -64,6 +70,7 @@ export default function LevelsScreen() {
                       mode: extra ? "extra" : "pack",
                       size: String(size),
                       id: String(item),
+                      cat,
                     },
                   })
                 }

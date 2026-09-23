@@ -1,5 +1,14 @@
-export const SIZES = [4, 5, 6, 7, 8, 9, 10] as const;
+import type { LevelCategory } from "@/game/types";
+
+export const SIZES = [4, 5, 6, 7, 8] as const;
 export type BoardSize = (typeof SIZES)[number];
+
+export type { LevelCategory };
+
+export const CATEGORY_LABEL: Record<LevelCategory, string> = {
+  rect: "方型積木",
+  tetro: "七型方塊",
+};
 
 /** Playtest pack size — regenerate more later once feel is locked. */
 export const LEVELS_PER_SIZE = 5;
@@ -8,25 +17,31 @@ export const DAILY_FALLBACK = 5;
 export const STARTER_HINTS = 5;
 export const INTERSTITIAL_EVERY = 3;
 
-/** How many pieces (and roughly how many board numbers) per size. Rectangles only, ≤ 20 cells. */
+/** How many pieces per size. Rectangles only, ≤ 20 cells. */
 export const PIECE_RANGE: Record<number, [number, number]> = {
   4: [2, 5],
   5: [3, 6],
-  6: [3, 7],
+  6: [4, 7],
   7: [4, 8],
   8: [5, 9],
-  9: [5, 9],
-  10: [6, 10],
 };
 
+/** Tetrominoes are 4 cells. 8×8 starts at 18 so a piece can still slide into a decoy. */
+export const TETRO_RANGE: Record<number, [number, number]> = {
+  4: [5, 6],
+  5: [7, 8],
+  6: [10, 11],
+  7: [13, 14],
+  8: [18, 19],
+};
+
+/** Upper bound is 6 on every size. */
 export const CLUE_RANGE: Record<number, [number, number]> = {
   4: [2, 5],
   5: [2, 6],
-  6: [3, 7],
-  7: [3, 8],
-  8: [4, 9],
-  9: [4, 9],
-  10: [5, 10],
+  6: [3, 6],
+  7: [3, 6],
+  8: [4, 6],
 };
 
 export const IAP = {
